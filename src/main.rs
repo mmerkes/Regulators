@@ -2,8 +2,8 @@
 
 #[macro_use] extern crate rocket;
 
-#[post("/regulate", format = "json", data = "<data>")]
-fn regulate(data: String) {
+#[post("/regulate")]
+fn regulate() {
 }
 
 #[get("/workflows/<workflow>")]
@@ -11,8 +11,8 @@ fn get_workflow(workflow: String) -> String {
 	"Returns workflow information".to_string()
 }
 
-#[put("/workflows/<workflow>/tasks/<task>", format = "json", data = "<data>")]
-fn update_task(workflow: String, task: String, data: String) {
+#[put("/workflows/<workflow>/tasks/<task>")]
+fn update_task(workflow: String, task: String) {
 }
 
 #[get("/workflows/<workflow>/tasks/<task>")]
