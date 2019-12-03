@@ -1,0 +1,26 @@
+#![feature(proc_macro_hygiene, decl_macro)]
+
+#[macro_use] extern crate rocket;
+
+#[post("/regulate", format = "json", data = "<data>")]
+fn regulate(data: String) {
+}
+
+#[get("/workflows/<workflow>")]
+fn get_workflow(workflow: String) -> String {
+	"Returns workflow information".to_string()
+}
+
+#[put("/workflows/<workflow>/tasks/<task>", format = "json", data = "<data>")]
+fn update_task(workflow: String, task: String, data: String) {
+}
+
+#[get("/workflows/<workflow>/tasks/<task>")]
+fn get_task(workflow: String, task: String) -> String {
+	"Returns task information".to_string()
+}
+
+fn main() {
+    rocket::ignite().mount("/", routes![regulate, get_workflow,
+                           update_task, get_task]).launch();
+}

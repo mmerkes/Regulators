@@ -1,0 +1,1 @@
+Regulators is a hackathon project to create a simple, pluggable system to create approval workflows in CD/CI pipelines, provide checks in a deployment system or for any other use. These workflow tasks could include locks, code review verification, safety and security checks, alarm validation, etc.
