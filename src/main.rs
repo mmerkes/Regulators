@@ -11,7 +11,7 @@ use rocket::State;
 use rocket::http::Status;
 use rocket_contrib::json::Json;
 use rusoto_core::{RusotoError, Region};
-use rusoto_dynamodb::{DynamoDb, DynamoDbClient, AttributeValue, GetItemInput, GetItemError, PutItemInput, PutItemError};
+use rusoto_dynamodb::{DynamoDb, DynamoDbClient, AttributeValue, GetItemInput, GetItemError, PutItemInput, PutItemError, QueryInput, QueryError};
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -20,6 +20,7 @@ use uuid::Uuid;
 enum RegulatorsError {
     GetItemError(RusotoError<GetItemError>),
     PutItemError(RusotoError<PutItemError>),
+    QueryError(RusotoError<QueryError>),
     SerdeError(serde_dynamodb::Error),
 }
 
@@ -32,6 +33,12 @@ impl From<serde_dynamodb::Error> for RegulatorsError {
 impl From<RusotoError<PutItemError>> for RegulatorsError {
     fn from(re: RusotoError<PutItemError>) -> Self {
         RegulatorsError::PutItemError(re)
+    }
+}
+
+impl From<RusotoError<QueryError>> for RegulatorsError {
+    fn from(re: RusotoError<QueryError>) -> Self {
+        RegulatorsError::QueryError(re)
     }
 }
 
@@ -169,6 +176,10 @@ fn _get_workflow(workflow: String, ddb: &State<DynamoDbClient>) -> Result<Option
     get_item_input.table_name = "workflows".to_string();
     match ddb.get_item(get_item_input).sync() {
         Ok(output) => {
+            if output.item.is_none() {
+                return Ok(None);
+            }
+
             match serde_dynamodb::from_hashmap(output.item.unwrap()) {
                 Ok(workflow) => {
                     Ok(Some(workflow))
@@ -193,7 +204,7 @@ fn get_workflow(workflow: String, ddb: State<DynamoDbClient>) -> Option<Json<Wor
                 None => None
             }
         },
-        Err(err) => None
+        Err(_err) => None
     }
 }
 
@@ -210,6 +221,10 @@ fn _get_task(workflow: String, task: String, ddb: &State<DynamoDbClient>) -> Opt
     get_item_input.table_name = "tasks".to_string();
     match ddb.get_item(get_item_input).sync() {
         Ok(output) => {
+            if output.item.is_none() {
+                return None;
+            }
+
             match serde_dynamodb::from_hashmap(output.item.unwrap()) {
                 Ok(workflow_task) => {
                     Some(workflow_task)
@@ -250,9 +265,34 @@ fn _update_task_status(mut task: WorkflowTask, status: String, ddb: &State<Dynam
     }
 }
 
+fn _workflow_has_pending_tasks(workflow: String, ddb: &State<DynamoDbClient>) -> Result<bool, RegulatorsError> {
+    let mut query = HashMap::new();
+    query.insert(String::from(":workflow_id"), AttributeValue {
+        s: Some(String::from(workflow)),
+        ..Default::default()
+    });
+
+    let has_pending: bool = ddb
+        .query(QueryInput {
+            table_name: String::from("tasks"),
+            key_condition_expression: Some(String::from("workflow_id = :workflow_id")),
+            expression_attribute_values: Some(query),
+            ..Default::default()
+        })
+        .sync()
+        .unwrap()
+        .items
+        .unwrap_or_else(|| vec![])
+        .into_iter()
+        .map(|item| serde_dynamodb::from_hashmap(item).unwrap())
+        .any(|task: WorkflowTask| task.status != "Failed" && task.status != "Succeeded");
+
+    Ok(has_pending)
+}
+
 #[put("/workflows/<workflow>/tasks/<task>", data = "<data>")]
 fn update_task(workflow: String, task: String, data: Json<PutTaskData>, ddb: State<DynamoDbClient>) -> Status {
-    match _get_task(workflow, task, &ddb) {
+    match _get_task(workflow.clone(), task, &ddb) {
         Some(workflow_task) => {
             match _update_task_status(workflow_task, data.status.clone(), &ddb) {
                 Ok(_output) => (),
@@ -267,11 +307,80 @@ fn update_task(workflow: String, task: String, data: Json<PutTaskData>, ddb: Sta
         }
     }
 
-    // TODO: If failed, fail the workflow
+    if data.status == "Failed" {
+        match _get_workflow(workflow.clone(), &ddb) {
+            Ok(workflow_opt) => {
+                if workflow_opt.is_none() {
+                    println!("Workflow not found for {}", workflow.clone());
+                    return Status::NotFound;
+                }
 
-    // TODO: If succeeded, check if all tasks succeeded, and succeed workflow if all succeeded
+                let mut workflow_ddb = workflow_opt.unwrap();
+                workflow_ddb.status = data.status.clone();
+                workflow_ddb.status = data.status.clone();
+                match _update_workflow(workflow_ddb, &ddb) {
+                    Ok(()) => {
+                        return Status::Accepted;
+                    },
+                    Err(err) => {
+                        println!("Error: {:?}", err);
+                        return Status::BadRequest;
+                    }
+                }
+            },
+            Err(err) => {
+                println!("Error: {:?}", err);
+                return Status::BadRequest;
+            }
+        }
+    }
 
-    Status::Accepted
+    if data.status == "Succeeded" {
+        match _get_workflow(workflow.clone(), &ddb) {
+            Ok(workflow_opt) => {
+                if workflow_opt.is_none() {
+                    println!("Workflow not found for {}", workflow.clone());
+                    return Status::NotFound;
+                }
+
+                let mut workflow_ddb = workflow_opt.unwrap();
+
+                if workflow_ddb.status == "Failed" || workflow_ddb.status == "Succeeded" {
+                    println!("Workflow status is in a final status for workflow {}. Doing nothing.", workflow.clone());
+                    return Status::Accepted;
+                }
+
+
+                match _workflow_has_pending_tasks(workflow.clone(), &ddb) {
+                    Ok(has_pending) => {
+                        if !has_pending {
+                            workflow_ddb.status = data.status.clone();
+                            workflow_ddb.status = data.status.clone();
+                            match _update_workflow(workflow_ddb, &ddb) {
+                                Ok(()) => (),
+                                Err(err) => {
+                                    println!("Error: {:?}", err);
+                                    return Status::BadRequest;
+                                }
+                            }
+                        }
+
+                        return Status::Accepted;
+                    },
+                    Err(err) => {
+                        println!("Error: {:?}", err);
+                        return Status::BadRequest;
+                    }
+                }
+            },
+            Err(err) => {
+                println!("Error: {:?}", err);
+                return Status::BadRequest;
+            }
+        }
+    }
+
+    Status::BadRequest
 }
 
 #[get("/workflows/<workflow>/tasks/<task>")]
