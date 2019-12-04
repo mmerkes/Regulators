@@ -21,3 +21,31 @@ $ cargo run
 docker build -t regulators .
 docker run -it --rm --publish 9000:8000 --name regulators regulators
 ```
+
+## Details
+
+### POST /regulate API details
+
+The JSON data for `POST /regulate` should be something like this:
+
+```
+{
+    "regulators": [{
+        "name": "Regulators_AcquireLock",
+        "context": {
+            "lock_key": "foo::bar"
+        }
+    }, {
+        "name": "Regulators_CodeReviewVerification",
+        "context": {
+            "repository": "https://github.com/mmerkes/Regulators",
+            "required_approvers": 1
+        }
+    }, {
+        "name": "MyCustomRegulator",
+        "context": {
+            "foo": "bar"
+        }
+    }]
+}
+```
