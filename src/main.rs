@@ -147,6 +147,11 @@ fn _invoke_lambda(task: &WorkflowTask, lambda: &State<LambdaClient>) -> Result<(
     }
 }
 
+#[get("/")]
+fn index() -> &'static str {
+    "Regulators!"
+}
+
 #[post("/regulate", data = "<data>")]
 fn regulate(data: Json<RegulateData>, ddb: State<DynamoDbClient>, lambda: State<LambdaClient>) -> Json<RegulateResponse> {
     let regulators = data.into_inner().regulators;
@@ -486,7 +491,6 @@ fn main() {
     rocket::ignite()
         .manage(DynamoDbClient::new(Region::UsEast1))
         .manage(LambdaClient::new(Region::UsEast1))
-        .mount("/", routes![regulate, get_workflow,
-                           update_task, get_task])
+        .mount("/", routes![index, regulate, get_workflow, update_task, get_task])
         .launch();
 }
