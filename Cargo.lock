@@ -1073,10 +1073,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "regulators"
 version = "0.1.0"
 dependencies = [
+ "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "rocket 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rocket_contrib 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rusoto_core 0.42.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rusoto_dynamodb 0.42.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rusoto_lambda 0.42.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_dynamodb 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1210,6 +1212,19 @@ dependencies = [
 
 [[package]]
 name = "rusoto_dynamodb"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rusoto_core 0.42.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.42 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "rusoto_lambda"
 version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
@@ -2042,6 +2057,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum rusoto_core 0.42.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f1d1ecfe8dac29878a713fbc4c36b0a84a48f7a6883541841cdff9fdd2ba7dfb"
 "checksum rusoto_credential 0.42.0 (registry+https://github.com/rust-lang/crates.io-index)" = "8632e41d289db90dd40d0389c71a23c5489e3afd448424226529113102e2a002"
 "checksum rusoto_dynamodb 0.42.0 (registry+https://github.com/rust-lang/crates.io-index)" = "7f6cfb692b9300c14d0d7c2607b2dcb9da8afca4239f3ca4e9ec48f47696ac9d"
+"checksum rusoto_lambda 0.42.0 (registry+https://github.com/rust-lang/crates.io-index)" = "431c3a22145cb1cca3376085b8434055024c89fdf4b87831542577396326ca27"
 "checksum rusoto_signature 0.42.0 (registry+https://github.com/rust-lang/crates.io-index)" = "7063a70614eb4b36f49bcf4f6f6bb30cc765e3072b317d6afdfe51e7a9f482d1"
 "checksum rust-argon2 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "4ca4eaef519b494d1f2848fc602d18816fed808a981aedf4f1f00ceb7c9d32cf"
 "checksum rustc-demangle 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)" = "4c691c0e608126e00913e33f0ccf3727d5fc84573623b8d65b2df340b5201783"

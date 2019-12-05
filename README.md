@@ -58,7 +58,7 @@ The `/regulate` API calls Lambdas asynchronously and waits for them to complete 
 {
     "workflow_id": "some-id",
     "task_id": "some-task",
-    "content": {
+    "context": {
         "keys": "exactly like the customer called with"
     }
 }
