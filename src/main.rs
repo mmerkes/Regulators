@@ -7,11 +7,13 @@ extern crate rusoto_dynamodb;
 extern crate serde;
 extern crate serde_dynamodb;
 
+use bytes::Bytes;
 use rocket::State;
 use rocket::http::Status;
 use rocket_contrib::json::Json;
 use rusoto_core::{RusotoError, Region};
 use rusoto_dynamodb::{DynamoDb, DynamoDbClient, AttributeValue, GetItemInput, GetItemError, PutItemInput, PutItemError, QueryInput, QueryError};
+use rusoto_lambda::{Lambda, LambdaClient, InvokeAsyncRequest, InvokeAsyncError};
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -21,6 +23,7 @@ enum RegulatorsError {
     GetItemError(RusotoError<GetItemError>),
     PutItemError(RusotoError<PutItemError>),
     QueryError(RusotoError<QueryError>),
+    InvokeAsyncError(RusotoError<InvokeAsyncError>),
     SerdeError(serde_dynamodb::Error),
 }
 
@@ -45,6 +48,12 @@ impl From<RusotoError<QueryError>> for RegulatorsError {
 impl From<RusotoError<GetItemError>> for RegulatorsError {
     fn from(re: RusotoError<GetItemError>) -> Self {
         RegulatorsError::GetItemError(re)
+    }
+}
+
+impl From<RusotoError<InvokeAsyncError>> for RegulatorsError {
+    fn from(re: RusotoError<InvokeAsyncError>) -> Self {
+        RegulatorsError::InvokeAsyncError(re)
     }
 }
 
@@ -105,8 +114,34 @@ fn _update_workflow(workflow: Workflow, ddb: &State<DynamoDbClient>) -> Result<(
     }
 }
 
+#[derive(Serialize)]
+struct RegulatorInvokeArgs {
+    workflow_id: String,
+    task_id: String,
+    context: HashMap<String, Value>,
+}
+
+fn _invoke_lambda(task: &WorkflowTask, lambda: &State<LambdaClient>) -> Result<(), RegulatorsError> {
+    let args = Bytes::from(serde_json::to_string(&RegulatorInvokeArgs {
+        workflow_id: task.workflow_id.clone(),
+        task_id: task.id.clone(),
+        context: task.regulator.context.clone(),
+    }).unwrap());
+
+    let request = InvokeAsyncRequest {
+        function_name: task.regulator.name.clone(),
+        invoke_args: args,
+        ..Default::default()
+    };
+
+    match lambda.invoke_async(request).sync() {
+        Ok(_output) => Ok(()),
+        Err(err) => Err(RegulatorsError::InvokeAsyncError(err))
+    }
+}
+
 #[post("/regulate", data = "<data>")]
-fn regulate(data: Json<RegulateData>, ddb: State<DynamoDbClient>) -> Json<RegulateResponse> {
+fn regulate(data: Json<RegulateData>, ddb: State<DynamoDbClient>, lambda: State<LambdaClient>) -> Json<RegulateResponse> {
     let regulators = data.into_inner().regulators;
 
     let workflow_id = Uuid::new_v4();
@@ -121,7 +156,7 @@ fn regulate(data: Json<RegulateData>, ddb: State<DynamoDbClient>) -> Json<Regula
             println!("{:?}", err);
             return Json(RegulateResponse {
                 id: "".to_string(),
-            })
+            });
         }
     }
 
@@ -150,16 +185,33 @@ fn regulate(data: Json<RegulateData>, ddb: State<DynamoDbClient>) -> Json<Regula
                     }
                     Err(error) => {
                         println!("Error: {:?}", error);
+                        return Json(RegulateResponse {
+                            id: "".to_string(),
+                        });
                     }
                 }
             },
             Err(err) => {
                 println!("{:?}", err);
+                return Json(RegulateResponse {
+                    id: "".to_string(),
+                });
             }
         }
     }
 
-    // TODO: Call Lambdas
+    // Invoking the lambdas as a second step so that we know we've persisted them first.
+    for task in &workflow_tasks {
+        match _invoke_lambda(task, &lambda) {
+            Ok(_response) => (),
+            Err(err) => {
+                println!("{:?}", err);
+                return Json(RegulateResponse {
+                    id: "".to_string(),
+                });
+            }
+        }
+    }
 
     Json(RegulateResponse {
         id: workflow_id.to_string(),
@@ -396,6 +448,7 @@ fn get_task(workflow: String, task: String, ddb: State<DynamoDbClient>) -> Optio
 fn main() {
     rocket::ignite()
         .manage(DynamoDbClient::new(Region::UsEast1))
+        .manage(LambdaClient::new(Region::UsEast1))
         .mount("/", routes![regulate, get_workflow,
                            update_task, get_task])
         .launch();
