@@ -1,5 +1,7 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 
+mod errors;
+
 #[macro_use] extern crate rocket;
 #[macro_use] extern crate serde_derive;
 extern crate rusoto_core;
@@ -8,54 +10,16 @@ extern crate serde;
 extern crate serde_dynamodb;
 
 use bytes::Bytes;
+use errors::RegulatorsError;
 use rocket::State;
 use rocket::http::Status;
 use rocket_contrib::json::Json;
-use rusoto_core::{RusotoError, Region};
-use rusoto_dynamodb::{DynamoDb, DynamoDbClient, AttributeValue, GetItemInput, GetItemError, PutItemInput, PutItemError, QueryInput, QueryError};
-use rusoto_lambda::{Lambda, LambdaClient, InvokeAsyncRequest, InvokeAsyncError};
+use rusoto_core::{Region};
+use rusoto_dynamodb::{DynamoDb, DynamoDbClient, AttributeValue, GetItemInput, PutItemInput, QueryInput};
+use rusoto_lambda::{Lambda, LambdaClient, InvokeAsyncRequest};
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
-
-#[derive(Debug)]
-enum RegulatorsError {
-    GetItemError(RusotoError<GetItemError>),
-    PutItemError(RusotoError<PutItemError>),
-    QueryError(RusotoError<QueryError>),
-    InvokeAsyncError(RusotoError<InvokeAsyncError>),
-    SerdeError(serde_dynamodb::Error),
-}
-
-impl From<serde_dynamodb::Error> for RegulatorsError {
-    fn from(se: serde_dynamodb::Error) -> Self {
-        RegulatorsError::SerdeError(se)
-    }
-}
-
-impl From<RusotoError<PutItemError>> for RegulatorsError {
-    fn from(re: RusotoError<PutItemError>) -> Self {
-        RegulatorsError::PutItemError(re)
-    }
-}
-
-impl From<RusotoError<QueryError>> for RegulatorsError {
-    fn from(re: RusotoError<QueryError>) -> Self {
-        RegulatorsError::QueryError(re)
-    }
-}
-
-impl From<RusotoError<GetItemError>> for RegulatorsError {
-    fn from(re: RusotoError<GetItemError>) -> Self {
-        RegulatorsError::GetItemError(re)
-    }
-}
-
-impl From<RusotoError<InvokeAsyncError>> for RegulatorsError {
-    fn from(re: RusotoError<InvokeAsyncError>) -> Self {
-        RegulatorsError::InvokeAsyncError(re)
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Workflow {
