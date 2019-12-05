@@ -92,6 +92,13 @@ struct PutTaskData {
     status: String,
 }
 
+#[derive(Serialize)]
+struct GetWorkflowResponse {
+    id: String,
+    status: String,
+    tasks: Vec<WorkflowTask>,
+}
+
 fn _update_workflow(workflow: Workflow, ddb: &State<DynamoDbClient>) -> Result<(), RegulatorsError> {
     match serde_dynamodb::to_hashmap(&workflow) {
         Ok(workflow_ddb) => {
@@ -247,16 +254,59 @@ fn _get_workflow(workflow: String, ddb: &State<DynamoDbClient>) -> Result<Option
     }
 }
 
+fn _get_tasks(workflow: String, ddb: &State<DynamoDbClient>) -> Result<Vec<WorkflowTask>, RegulatorsError> {
+    let mut query = HashMap::new();
+    query.insert(String::from(":workflow_id"), AttributeValue {
+        s: Some(String::from(workflow)),
+        ..Default::default()
+    });
+
+    let tasks = ddb
+        .query(QueryInput {
+            table_name: String::from("tasks"),
+            key_condition_expression: Some(String::from("workflow_id = :workflow_id")),
+            expression_attribute_values: Some(query),
+            ..Default::default()
+        })
+        .sync()
+        .unwrap()
+        .items
+        .unwrap_or_else(|| vec![])
+        .into_iter()
+        .map(|item| serde_dynamodb::from_hashmap(item).unwrap())
+        .collect();
+
+    Ok(tasks)
+}
+
 #[get("/workflows/<workflow>")]
-fn get_workflow(workflow: String, ddb: State<DynamoDbClient>) -> Option<Json<Workflow>> {
+fn get_workflow(workflow: String, ddb: State<DynamoDbClient>) -> Option<Json<GetWorkflowResponse>> {
     match _get_workflow(workflow.clone(), &ddb) {
         Ok(workflow_option) => {
-            match workflow_option {
-                Some(workflow) => Some(Json(workflow)),
-                None => None
+            if workflow_option.is_none() {
+                return None;
+            }
+
+            let workflow_ddb = workflow_option.unwrap();
+
+            match _get_tasks(workflow.clone(), &ddb) {
+                Ok(tasks) => {
+                    Some(Json(GetWorkflowResponse {
+                        id: workflow.clone(),
+                        status: workflow_ddb.status.clone(),
+                        tasks: tasks,
+                    }))
+                },
+                Err(err) => {
+                    println!("{:?}", err);
+                    None
+                }
             }
         },
-        Err(_err) => None
+        Err(err) => {
+            println!("{:?}", err);
+            None
+        }
     }
 }
 
@@ -318,28 +368,15 @@ fn _update_task_status(mut task: WorkflowTask, status: String, ddb: &State<Dynam
 }
 
 fn _workflow_has_pending_tasks(workflow: String, ddb: &State<DynamoDbClient>) -> Result<bool, RegulatorsError> {
-    let mut query = HashMap::new();
-    query.insert(String::from(":workflow_id"), AttributeValue {
-        s: Some(String::from(workflow)),
-        ..Default::default()
-    });
+    match _get_tasks(workflow.clone(), ddb) {
+        Ok(tasks) => {
+            let has_pending = tasks.into_iter()
+                .any(|task: WorkflowTask| task.status != "Failed" && task.status != "Succeeded");
 
-    let has_pending: bool = ddb
-        .query(QueryInput {
-            table_name: String::from("tasks"),
-            key_condition_expression: Some(String::from("workflow_id = :workflow_id")),
-            expression_attribute_values: Some(query),
-            ..Default::default()
-        })
-        .sync()
-        .unwrap()
-        .items
-        .unwrap_or_else(|| vec![])
-        .into_iter()
-        .map(|item| serde_dynamodb::from_hashmap(item).unwrap())
-        .any(|task: WorkflowTask| task.status != "Failed" && task.status != "Succeeded");
-
-    Ok(has_pending)
+            Ok(has_pending)
+        },
+        Err(err) => Err(err)
+    }
 }
 
 #[put("/workflows/<workflow>/tasks/<task>", data = "<data>")]
