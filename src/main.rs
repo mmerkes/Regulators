@@ -315,7 +315,7 @@ fn get_workflow(workflow: String, ddb: State<DynamoDbClient>) -> Option<Json<Get
     }
 }
 
-fn _get_task(workflow: String, task: String, ddb: &State<DynamoDbClient>) -> Option<WorkflowTask> {
+fn _get_task(workflow: String, task: String, ddb: &State<DynamoDbClient>) -> Result<Option<WorkflowTask>, RegulatorsError> {
     let mut key = HashMap::new();
     let mut primary_key: AttributeValue = Default::default();
     primary_key.s = Some(workflow);
@@ -326,27 +326,12 @@ fn _get_task(workflow: String, task: String, ddb: &State<DynamoDbClient>) -> Opt
     let mut get_item_input: GetItemInput = Default::default();
     get_item_input.key = key;
     get_item_input.table_name = "tasks".to_string();
-    match ddb.get_item(get_item_input).sync() {
-        Ok(output) => {
-            if output.item.is_none() {
-                return None;
-            }
-
-            match serde_dynamodb::from_hashmap(output.item.unwrap()) {
-                Ok(workflow_task) => {
-                    Some(workflow_task)
-                },
-                Err(err) => {
-                    println!("{:?}", err);
-                    None
-                }
-            }
-        }
-        Err(error) => {
-            println!("Error: {:?}", error);
-            None
-        }
+    let output = ddb.get_item(get_item_input).sync()?;
+    if output.item.is_none() {
+        return Ok(None);
     }
+
+    Ok(Some(serde_dynamodb::from_hashmap(output.item.unwrap())?))
 }
 
 fn _update_task_status(mut task: WorkflowTask, status: String, ddb: &State<DynamoDbClient>) -> Result<(), RegulatorsError> {
@@ -387,8 +372,11 @@ fn _workflow_has_pending_tasks(workflow: String, ddb: &State<DynamoDbClient>) ->
 #[put("/workflows/<workflow>/tasks/<task>", data = "<data>")]
 fn update_task(workflow: String, task: String, data: Json<PutTaskData>, ddb: State<DynamoDbClient>) -> Status {
     match _get_task(workflow.clone(), task, &ddb) {
-        Some(workflow_task) => {
-            match _update_task_status(workflow_task, data.status.clone(), &ddb) {
+        Ok(task_opt) => {
+            if task_opt.is_none() {
+                return Status::NotFound;
+            }
+            match _update_task_status(task_opt.unwrap(), data.status.clone(), &ddb) {
                 Ok(_output) => (),
                 Err(err) => {
                     println!("Error: {:?}", err);
@@ -396,8 +384,9 @@ fn update_task(workflow: String, task: String, data: Json<PutTaskData>, ddb: Sta
                 }
             }
         },
-        None => {
-            return Status::NotFound;
+        Err(err) => {
+            println!("Error: {:?}", err);
+            return Status::BadRequest;
         }
     }
 
@@ -480,10 +469,17 @@ fn update_task(workflow: String, task: String, data: Json<PutTaskData>, ddb: Sta
 #[get("/workflows/<workflow>/tasks/<task>")]
 fn get_task(workflow: String, task: String, ddb: State<DynamoDbClient>) -> Option<Json<WorkflowTask>> {
     match _get_task(workflow, task, &ddb) {
-        Some(task) => {
-            Some(Json(task))
+        Ok(task_opt) => {
+            if task_opt.is_none() {
+                return None;
+            }
+
+            return Some(Json(task_opt.unwrap()));
         },
-        None => None
+        Err(err) => {
+            println!("Error: {:?}", err);
+            None
+        }
     }
 }
 
