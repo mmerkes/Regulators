@@ -235,6 +235,7 @@ fn _get_tasks(workflow: String, ddb: &State<DynamoDbClient>) -> Result<Vec<Workf
             table_name: String::from("tasks"),
             key_condition_expression: Some(String::from("workflow_id = :workflow_id")),
             expression_attribute_values: Some(query),
+            consistent_read: Some(true),
             ..Default::default()
         })
         .sync()
