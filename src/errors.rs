@@ -9,11 +9,18 @@ pub enum RegulatorsError {
     QueryError(RusotoError<QueryError>),
     InvokeAsyncError(RusotoError<InvokeAsyncError>),
     SerdeError(serde_dynamodb::Error),
+    SerdeJsonError(serde_json::error::Error),
 }
 
 impl From<serde_dynamodb::Error> for RegulatorsError {
     fn from(se: serde_dynamodb::Error) -> Self {
         RegulatorsError::SerdeError(se)
+    }
+}
+
+impl From<serde_json::error::Error> for RegulatorsError {
+    fn from(e: serde_json::error::Error) -> Self {
+        RegulatorsError::SerdeJsonError(e)
     }
 }
 

@@ -64,25 +64,16 @@ struct GetWorkflowResponse {
 }
 
 fn _update_workflow(workflow: Workflow, ddb: &State<DynamoDbClient>) -> Result<(), RegulatorsError> {
-    match serde_dynamodb::to_hashmap(&workflow) {
-        Ok(workflow_ddb) => {
-            let mut put_item_input: PutItemInput = Default::default();
-            put_item_input.item = workflow_ddb;
-            put_item_input.table_name = "workflows".to_owned();
-            match ddb.put_item(put_item_input).sync() {
-                Ok(_output) => {
-                    Ok(())
-                },
-                Err(err) => {
-                    println!("Error: {:?}", err);
-                    Err(RegulatorsError::PutItemError(err))
-                }
-            }
-        },
-        Err(err) => {
-            Err(RegulatorsError::SerdeError(err))
-        }
-    }
+    let workflow_ddb = serde_dynamodb::to_hashmap(&workflow)?;
+
+    let put_item_input = PutItemInput {
+        item: workflow_ddb,
+        table_name: "workflows".to_string(),
+        ..Default::default()
+    };
+    ddb.put_item(put_item_input).sync()?;
+
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -97,7 +88,7 @@ fn _invoke_lambda(task: &WorkflowTask, lambda: &State<LambdaClient>) -> Result<(
         workflow_id: task.workflow_id.clone(),
         task_id: task.id.clone(),
         context: task.regulator.context.clone(),
-    }).unwrap());
+    })?);
 
     let request = InvokeAsyncRequest {
         function_name: task.regulator.name.clone(),
@@ -105,10 +96,8 @@ fn _invoke_lambda(task: &WorkflowTask, lambda: &State<LambdaClient>) -> Result<(
         ..Default::default()
     };
 
-    match lambda.invoke_async(request).sync() {
-        Ok(_output) => Ok(()),
-        Err(err) => Err(RegulatorsError::InvokeAsyncError(err))
-    }
+    lambda.invoke_async(request).sync()?;
+    Ok(())
 }
 
 #[get("/")]
@@ -196,13 +185,16 @@ fn regulate(data: Json<RegulateData>, ddb: State<DynamoDbClient>, lambda: State<
 
 fn _get_workflow(workflow: String, ddb: &State<DynamoDbClient>) -> Result<Option<Workflow>, RegulatorsError> {
     let mut key = HashMap::new();
-    let mut primary_key: AttributeValue = Default::default();
-    primary_key.s = Some(workflow);
+    let primary_key = AttributeValue {
+        s: Some(workflow),
+        ..Default::default()
+    };
     key.insert("id".to_string(), primary_key);
-    let mut get_item_input: GetItemInput = Default::default();
-    get_item_input.key = key;
-    get_item_input.table_name = "workflows".to_string();
-
+    let get_item_input = GetItemInput {
+        key: key,
+        table_name: "workflows".to_string(),
+        ..Default::default()
+    };
     let output = ddb.get_item(get_item_input).sync()?;
 
     if output.item.is_none() {
